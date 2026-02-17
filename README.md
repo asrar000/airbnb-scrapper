@@ -1,88 +1,69 @@
-# Airbnb Web Scraper
+# Airbnb Scraper
 
-<div align="center">
-
-<table style="border: 4px solid red; background-color: #fff0f0; width: 100%;">
-<tr>
-<td align="center" style="padding: 20px;">
-
-<h1 style="color: red; font-size: 2.5em;">&#9888; WARNING &#9888;</h1>
-
-<h2 style="color: red;">THIS PROJECT DOES NOT WORK WITH GOCOLLY</h2>
-
-<p style="color: darkred; font-size: 1.1em;">
-Airbnb's anti-bot protection (Cloudflare + JavaScript rendering) actively blocks all
-Gocolly-based scrapers. Gocolly is an HTTP-level scraper and cannot execute JavaScript,
-which Airbnb requires to render its listing data. Every request made by this scraper
-will be intercepted and returned as a bot-challenge page with no usable content.
-</p>
-
-<p style="color: darkred; font-size: 1.1em;">
-This codebase is submitted purely to satisfy the architectural and code quality
-requirements of the assignment. The scraping layer is fully implemented correctly
-using Gocolly with rate limiting, rotating user agents, retry logic, and
-__NEXT_DATA__ JSON parsing — however it will return zero listings at runtime
-due to Airbnb's infrastructure-level bot detection, which no HTTP-based scraper
-can bypass without a headless browser or a paid proxy service.
-</p>
-
-<p style="color: darkred;">
-To actually scrape Airbnb data, a headless browser such as
-<strong>Playwright</strong>, <strong>Puppeteer</strong>, or <strong>chromedp</strong>
-would be required, which is outside the scope of this assignment.
-</p>
-
-</td>
-</tr>
-</table>
-
-</div>
+A concurrent, rate-limited web scraping system built in Go using chromedp (headless Chromium). Scrapes Airbnb property listings for a configured city, fetches detail pages for enriched data, stores raw output in CSV, persists clean data in PostgreSQL, and prints a market insights report to the terminal.
 
 ---
 
-A high-performance, concurrent, rate-limited web scraping system built in Go using the Colly library. Scrapes Airbnb property rental data, stores raw data in CSV, persists clean data in PostgreSQL, and generates market insights printed to the terminal.
+## Why chromedp and not Gocolly
+
+Airbnb renders all listing data client-side via JavaScript. Gocolly is an HTTP-level scraper with no JavaScript engine, so it receives only an empty HTML shell and cannot see any listing cards. chromedp drives a real Chromium browser that fully executes JavaScript, which is the only reliable way to scrape Airbnb's search results.
+
+---
+
+## What it does
+
+1. Opens a real Chromium browser (headless by default)
+2. Navigates to Airbnb search results for the configured city (default: Kuala Lumpur)
+3. Scrolls the page to trigger lazy-loading of listing cards
+4. Extracts the first 5 listing cards from page 1
+5. Navigates to each individual property page and extracts full details
+6. Repeats for page 2 (first 5 listings)
+7. Saves all 10 raw listings to CSV as an audit trail
+8. Cleans and normalizes the data
+9. Saves clean listings to PostgreSQL
+10. Prints a market insights report to the terminal
 
 ---
 
 ## Project Structure
 
 ```
-airbnb-scraper/
+airbnb-scrapper/
 |
 +-- config/
-|   +-- config.go              # Env-based configuration loader
+|   +-- config.go              # Loads all settings from .env
 |
 +-- models/
 |   +-- listing.go             # RawListing, Listing, InsightReport structs
 |
 +-- scraper/
 |   +-- airbnb/
-|       +-- scraper.go         # Colly engine, rate limiting, pagination, retry
+|       +-- scraper.go         # chromedp browser engine, pagination, detail fetcher
 |       +-- parser.go          # ParsePrice, ParseRating, NormalizeLocation
 |
 +-- storage/
-|   +-- interface.go           # RawWriter interface (CSV) + Writer interface (PostgreSQL)
-|   +-- csv.go                 # Writes RAW listings to CSV as audit trail
+|   +-- interface.go           # RawWriter (CSV) and Writer (PostgreSQL) interfaces
+|   +-- csv.go                 # Writes RAW listings to CSV
 |   +-- postgres.go            # Writes CLEAN listings to PostgreSQL
 |
 +-- services/
 |   +-- cleaner.go             # Normalizes and deduplicates raw listings
-|   +-- insights.go            # Computes avg price, top rated, per location counts
+|   +-- insights.go            # Computes avg price, top rated, per-location counts
 |   +-- reporter.go            # Prints insight report to terminal
 |
 +-- utils/
 |   +-- logger.go              # Zap structured logger
-|   +-- retry.go               # Exponential backoff retry helper
+|   +-- ratelimiter.go         # Manual rate limiter with random jitter (chromedp has none)
+|   +-- retry.go               # Exponential backoff retry (chromedp has none)
 |   +-- concurrency.go         # Worker pool for goroutines
-|   +-- useragent.go           # Rotating browser User-Agent strings
 |
 +-- output/                    # Auto-created at runtime
-|   +-- listings.csv           # Raw scraped data (audit trail, unprocessed)
+|   +-- raw_listings.csv       # Raw scraped data, unprocessed
 |
-+-- main.go                    # Wires everything together
-+-- docker-compose.yml         # PostgreSQL via Docker (no root access needed)
-+-- .env                       # All configuration variables (do not commit)
-+-- .env.example               # Safe-to-commit reference for environment variables
++-- main.go                    # Wires everything together (6-step pipeline)
++-- docker-compose.yml         # PostgreSQL via Docker, no root access needed
++-- .env                       # Configuration (do not commit)
++-- .env.example               # Safe reference copy of all config keys
 +-- go.mod                     # Go module and dependencies
 +-- .gitignore
 +-- README.md
@@ -93,68 +74,112 @@ airbnb-scraper/
 ## Data Flow
 
 ```
-Scraper (Colly)
-    |
-    v
-RawListing[]
-    |         |
-    v         v
-CSV file    Cleaner
-(raw audit) (normalize, deduplicate)
-                |
-                v
-            Listing[]
-                |         |
-                v         v
-          PostgreSQL   InsightService
-          (clean data) (aggregate stats)
-                            |
-                            v
-                        Reporter
-                        (terminal output)
+chromedp (Chromium browser)
+         |
+         v
+  Search Results Page
+         |
+         v
+  Card URLs extracted (JS)
+         |
+         v
+  Detail page per listing (chromedp navigates)
+         |
+         v
+     RawListing[]
+      |          |
+      v          v
+  CSV file     Cleaner
+  (raw audit)  (normalize, deduplicate)
+                   |
+                   v
+               Listing[]
+                |       |
+                v       v
+          PostgreSQL  InsightService
+          (clean)     (aggregate)
+                           |
+                           v
+                       Reporter
+                       (terminal)
 ```
+
+---
+
+## Manually Implemented Features
+
+chromedp provides only raw browser automation. The following production-grade features are implemented manually in Go:
+
+| Feature | File | How |
+|---|---|---|
+| Rate limiting | utils/ratelimiter.go | time.Duration ticker with minimum gap enforcement |
+| Random jitter | utils/ratelimiter.go | rand.Int63n added on top of base delay |
+| Retry with backoff | utils/retry.go | Exponential delay multiplied by attempt number |
+| Worker pool | utils/concurrency.go | Goroutines reading from a buffered channel |
+| Duplicate URL tracking | scraper/airbnb/scraper.go | sync.Mutex protected map[string]bool |
+| Stealth JS injection | scraper/airbnb/scraper.go | navigator.webdriver overridden via chromedp.Evaluate |
+| Popup dismissal | scraper/airbnb/scraper.go | chromedp.Click on known close button selectors |
+| Lazy-load scroll | scraper/airbnb/scraper.go | JS window.scrollBy loop before card extraction |
 
 ---
 
 ## Prerequisites
 
-- Go 1.21 or higher
-- Docker and Docker Compose (used for PostgreSQL, no root access required)
+- Go 1.22 or higher
+- Google Chrome or Chromium installed on your machine
+- Docker and Docker Compose (for PostgreSQL, no root access required)
+
+### Install Chrome on Ubuntu (non-root)
+
+```bash
+# Download Chrome deb package
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+
+# Install (requires sudo for dpkg)
+sudo dpkg -i google-chrome-stable_current_amd64.deb
+sudo apt-get install -f
+
+# Verify
+google-chrome --version
+```
+
+chromedp will automatically find and use the installed Chrome binary.
 
 ---
 
 ## Quick Start
 
-### 1. Clone the repository
+### 1. Clone into your new repo
 
 ```bash
 git clone <your-repo-url>
-cd airbnb-scraper
+cd airbnb-scrapper
 ```
 
-### 2. Set up environment variables
-
-Copy the example file and fill in your values:
+### 2. Set up environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your preferred settings. The defaults work out of the box with the provided Docker Compose file.
+The defaults work out of the box. To change the target city:
 
-### 3. Start PostgreSQL via Docker
+```env
+AIRBNB_SEARCH_LOCATION=Bangkok
+```
+
+To watch the browser while scraping (useful for debugging):
+
+```env
+HEADLESS=false
+```
+
+### 3. Start PostgreSQL
 
 ```bash
 docker compose up -d
+docker compose ps   # wait for status: healthy
 ```
-
-Verify the container is healthy before proceeding:
-
-```bash
-docker compose ps
-```
-
-The postgres service should show a status of healthy.
 
 ### 4. Install Go dependencies
 
@@ -162,13 +187,11 @@ The postgres service should show a status of healthy.
 go mod tidy
 ```
 
-### 5. Run the scraper
+### 5. Run
 
 ```bash
 go run main.go
 ```
-
-The output/ folder and listings.csv file are created automatically on first run. The PostgreSQL table and indexes are also created automatically via the migration in storage/postgres.go.
 
 ---
 
@@ -177,89 +200,33 @@ The output/ folder and listings.csv file are created automatically on first run.
 | Item | Created by | Location |
 |---|---|---|
 | output/ folder | os.MkdirAll in csv.go | Project root |
-| listings.csv | os.Create in csv.go | output/listings.csv |
+| raw_listings.csv | os.Create in csv.go | output/raw_listings.csv |
 | listings table | migrate() in postgres.go | PostgreSQL |
 | DB indexes | migrate() in postgres.go | PostgreSQL |
 
-You do not need to create any of these manually.
+Nothing needs to be created manually.
 
 ---
 
-## Storage Design
+## Configuration Reference
 
-Raw and clean data are stored separately by design.
-
-**CSV - Raw data (audit trail)**
-
-Written immediately after scraping, before any cleaning. Preserves the original scraped strings exactly as received. Fields include raw_price (e.g. $120 per night) and rating as a raw string. Useful for debugging, re-processing, and auditing what was actually scraped.
-
-**PostgreSQL - Clean data (source of truth)**
-
-Written after the cleaning pipeline runs. Prices are parsed to numeric values, ratings normalized to floats, locations standardized, and duplicates removed. All insights and terminal reports are derived from this dataset.
-
----
-
-## Sample Terminal Output
-
-```
-===========================================================
-  VACATION RENTAL MARKET INSIGHTS
-===========================================================
-
-  Total Listings Scraped:        48
-  Airbnb Listings:               48
-
------------------------------------------------------------
-  PRICING SUMMARY
------------------------------------------------------------
-  Average Price (per night):     $142.76
-  Minimum Price:                 $35.00
-  Maximum Price:                 $1120.00
-
-  MOST EXPENSIVE PROPERTY
------------------------------------------------------------
-  Title    : Ocean View Luxury Villa
-  Price    : $1120.00 / night
-  Location : Miami, FL
-  URL      : https://www.airbnb.com/rooms/12345678
-
-  LISTINGS PER LOCATION (Top 10)
------------------------------------------------------------
-  Miami, FL:                      18
-  Miami Beach, FL:                12
-  Coral Gables, FL:                8
-
-  TOP 5 HIGHEST RATED PROPERTIES
------------------------------------------------------------
-  1. Lovely Modern Condo                              4.98
-     Miami, FL
-  2. Oceanfront Retreat                               4.96
-     Miami Beach, FL
-
-===========================================================
-  Report generated successfully.
-===========================================================
-```
-
----
-
-## Anti-Bot Protection Strategy
-
-Airbnb uses sophisticated bot detection. The scraper applies several mitigation techniques to reduce the risk of being blocked.
-
-| Strategy | Implementation |
-|---|---|
-| Rotating User Agents | 8 real browser UA strings, randomly selected per request |
-| Rate Limiting | Configurable delay between requests (default 3s plus 0 to 2s random jitter) |
-| Realistic Headers | Accept, Accept-Language, and Sec-Fetch headers mimic a real browser |
-| Low Parallelism | Default 2 concurrent workers |
-| Exponential Retry | Failed requests retried up to 3 times with increasing delays |
-| 429/503 Backoff | Automatic 30s pause when rate-limit responses are detected |
-| JSON Extraction | Parses the __NEXT_DATA__ JSON blob instead of fragile CSS selectors |
-
-### If you are still getting blocked
-
-Reduce parallelism by setting PARALLELISM=1 in .env. Increase delays by setting RATE_LIMIT_MS=8000 and RANDOM_DELAY_MS=5000. For persistent blocking, consider routing requests through a residential proxy by adding c.SetProxy() in scraper/airbnb/scraper.go, or switching to a headless browser such as chromedp for JavaScript-heavy pages.
+| Variable | Default | Description |
+|---|---|---|
+| DB_HOST | localhost | PostgreSQL host |
+| DB_PORT | 5432 | PostgreSQL port |
+| DB_USER | scraper | Database user |
+| DB_PASSWORD | scraperpass | Database password |
+| DB_NAME | airbnb_scraper | Database name |
+| LISTINGS_PER_PAGE | 5 | Number of listings to collect per page |
+| PAGES_TO_SCRAPE | 2 | Number of search result pages to scrape |
+| PAGE_LOAD_TIMEOUT_SEC | 60 | Timeout per page navigation in seconds |
+| ACTION_TIMEOUT_SEC | 30 | Timeout for individual DOM actions in seconds |
+| RATE_LIMIT_MS | 4000 | Minimum delay between requests in milliseconds |
+| RANDOM_DELAY_MS | 3000 | Maximum random jitter on top of base delay |
+| MAX_RETRIES | 3 | Retry attempts per failed navigation |
+| HEADLESS | true | Run Chrome headlessly (set false to watch browser) |
+| AIRBNB_SEARCH_LOCATION | Kuala Lumpur | City to search on Airbnb |
+| OUTPUT_CSV | ./output/raw_listings.csv | Path for raw CSV output |
 
 ---
 
@@ -275,73 +242,43 @@ CREATE TABLE listings (
     rating      NUMERIC(3,2)  NOT NULL DEFAULT 0,
     url         TEXT          NOT NULL UNIQUE,
     description TEXT          NOT NULL DEFAULT '',
+    amenities   TEXT          NOT NULL DEFAULT '',
     scraped_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
-
-CREATE INDEX idx_listings_price    ON listings(price);
-CREATE INDEX idx_listings_location ON listings(location);
-CREATE INDEX idx_listings_platform ON listings(platform);
-CREATE INDEX idx_listings_rating   ON listings(rating);
 ```
 
 ### Useful queries
 
 ```sql
--- All listings ordered by price descending
-SELECT title, price, location, rating
-FROM listings
-ORDER BY price DESC;
+-- View all listings
+SELECT title, price, location, rating FROM listings ORDER BY price DESC;
 
 -- Average price per location
 SELECT location, AVG(price)::numeric(10,2) AS avg_price, COUNT(*) AS total
-FROM listings
-GROUP BY location
-ORDER BY avg_price DESC;
+FROM listings GROUP BY location ORDER BY avg_price DESC;
 
--- Top rated listings
-SELECT title, rating, location
-FROM listings
-WHERE rating > 0
-ORDER BY rating DESC
-LIMIT 10;
+-- Top rated
+SELECT title, rating, location FROM listings
+WHERE rating > 0 ORDER BY rating DESC LIMIT 5;
+
+-- Check amenities
+SELECT title, amenities FROM listings WHERE amenities != '';
 ```
 
 ---
 
-## Configuration Reference
+## Debugging Tips
 
-All values are set in .env. Copy .env.example to get started.
+**Set HEADLESS=false** to open a real browser window and watch what chromedp does. This is the most useful debugging tool.
 
-| Variable | Default | Description |
-|---|---|---|
-| DB_HOST | localhost | PostgreSQL host |
-| DB_PORT | 5432 | PostgreSQL port |
-| DB_USER | scraper | Database user |
-| DB_PASSWORD | scraperpass | Database password |
-| DB_NAME | airbnb_scraper | Database name |
-| MAX_DEPTH | 3 | Colly max crawl depth |
-| PARALLELISM | 2 | Concurrent worker count |
-| RATE_LIMIT_MS | 3000 | Base delay between requests in milliseconds |
-| RANDOM_DELAY_MS | 2000 | Max random jitter added to base delay in milliseconds |
-| MAX_RETRIES | 3 | Retry attempts per failed request |
-| REQUEST_TIMEOUT_SEC | 30 | Per-request timeout in seconds |
-| AIRBNB_SEARCH_URL | Miami homes | Airbnb search page URL to begin scraping |
-| OUTPUT_CSV | ./output/listings.csv | Path for the raw CSV output file |
+**Airbnb changed its selectors** — this happens regularly. Open browser DevTools on the search page, inspect the listing card elements, and update the JS selector strings in scraper/airbnb/scraper.go.
 
----
+**CAPTCHA or challenge page** — increase RATE_LIMIT_MS and RANDOM_DELAY_MS to slow down requests. If the problem persists, Airbnb may have flagged your IP temporarily. Wait 30-60 minutes before retrying.
 
-## Architecture Notes
-
-The project follows SOLID principles with a clear separation of concerns across layers. Each package has a single responsibility and communicates through interfaces rather than concrete types.
-
-Storage is interface-driven. The RawWriter interface is implemented by CSVWriter, and the Writer interface is implemented by PostgresWriter. Adding a new backend such as S3 or BigQuery requires only a new struct implementing the relevant interface.
-
-All shared state in the scraper is protected by sync.Mutex to prevent data races. The PostgreSQL writer uses parameterized queries exclusively, with no string concatenation in SQL statements, eliminating SQL injection risk.
-
-If PostgreSQL is unavailable at startup, the scraper logs a warning and continues in CSV-only mode rather than exiting.
+**Zero listings scraped** — run with HEADLESS=false to see exactly what page chromedp is landing on.
 
 ---
 
 ## Disclaimer
 
-This project is for educational purposes only. Always review and comply with a website's robots.txt file and Terms of Service before scraping. Use low request rates and scrape responsibly.
+Always comply with a website's robots.txt and Terms of Service. Use respectful request rates and do not scrape at scale.
