@@ -12,32 +12,34 @@ import (
 )
 
 func main() {
-	// ── Bootstrap ─────────────────────────────────────────────────────────────
+	// ── Bootstrap ──────────────────────────────────────────────────────────────
 	utils.InitLogger()
 	defer utils.Sync()
 	log := utils.Logger()
 
-	log.Infof("=== Airbnb Scraper Starting ===")
+	log.Infof("=== Airbnb Scraper (chromedp) Starting ===")
 
-	// Load configuration from .env / environment
 	cfg, err := config.Load()
 	if err != nil {
 		log.Errorf("Config load failed: %v", err)
 		os.Exit(1)
 	}
 
-	// ── Storage setup ─────────────────────────────────────────────────────────
+	log.Infof("Target location : %s", cfg.Airbnb.SearchLocation)
+	log.Infof("Pages to scrape : %d", cfg.Scraper.PagesToScrape)
+	log.Infof("Listings/page   : %d", cfg.Scraper.ListingsPerPage)
+	log.Infof("Headless mode   : %v", cfg.Scraper.Headless)
 
-	// CSV receives RAW unprocessed listings straight from the scraper.
-	// This acts as a full audit trail of everything that was scraped.
-	csvWriter, err := storage.NewCSVWriter(cfg.OutputCSV)
+	// ── Storage setup ──────────────────────────────────────────────────────────
+
+	// CSV receives RAW unprocessed listings — complete audit trail of scrape output
+	csvWriter, err := storage.NewCSVWriter(cfg.Output.CSVPath)
 	if err != nil {
 		log.Errorf("CSV writer setup failed: %v", err)
 		os.Exit(1)
 	}
 
-	// PostgreSQL receives only CLEAN, normalized listings after processing.
-	// Insights are generated from this clean dataset.
+	// PostgreSQL receives only CLEAN, normalized listings — source of truth for insights
 	pgWriter, err := storage.NewPostgresWriter(cfg)
 	if err != nil {
 		log.Warnf("PostgreSQL unavailable — clean data will not be persisted: %v", err)
@@ -45,12 +47,8 @@ func main() {
 		defer pgWriter.Close()
 	}
 
-	// ── Scraping ──────────────────────────────────────────────────────────────
-	scraper, err := airbnb.New(cfg)
-	if err != nil {
-		log.Errorf("Failed to initialize scraper: %v", err)
-		os.Exit(1)
-	}
+	// ── Step 1: Scrape ─────────────────────────────────────────────────────────
+	scraper := airbnb.New(cfg)
 
 	rawListings, err := scraper.Scrape()
 	if err != nil {
@@ -60,29 +58,27 @@ func main() {
 
 	if len(rawListings) == 0 {
 		fmt.Println()
-		fmt.Println("  No listings were scraped.")
-		fmt.Println("   This is likely because Airbnb's anti-bot protection is active.")
-		fmt.Println("   See the README for strategies to improve scrape success rate.")
+		fmt.Println("WARNING: No listings were scraped.")
+		fmt.Println("Possible causes:")
+		fmt.Println("  - Airbnb changed its page structure (update JS selectors in scraper.go)")
+		fmt.Println("  - The search returned no results for the configured location")
+		fmt.Println("  - A CAPTCHA or bot-challenge page was served")
+		fmt.Println("  - Set HEADLESS=false in .env to watch the browser and debug")
 		fmt.Println()
 	}
 
-	// ── Step 1: Persist RAW data → CSV ────────────────────────────────────────
-	// Saved before any cleaning so we have a complete audit log of the scrape,
-	// including listings that may later be filtered out as invalid.
+	// ── Step 2: Save RAW data to CSV ────────────────────────────────────────────
 	log.Infof("Saving %d raw listings to CSV...", len(rawListings))
 	if err := csvWriter.SaveRaw(rawListings); err != nil {
-		log.Errorf("CSV raw write failed: %v", err)
+		log.Errorf("CSV write failed: %v", err)
 	}
 
-	// ── Step 2: Clean the raw data ────────────────────────────────────────────
-	// Normalizes prices, ratings, locations; removes duplicates and invalid entries.
+	// ── Step 3: Clean ──────────────────────────────────────────────────────────
 	cleaner := services.NewCleaner()
 	cleanListings := cleaner.Clean(rawListings)
-	log.Infof("Cleaned listings ready: %d / %d", len(cleanListings), len(rawListings))
+	log.Infof("Clean listings: %d / %d", len(cleanListings), len(rawListings))
 
-	// ── Step 3: Persist CLEAN data → PostgreSQL ───────────────────────────────
-	// Only the validated, normalized dataset goes into the database.
-	// Insights are derived from this same clean dataset.
+	// ── Step 4: Save CLEAN data to PostgreSQL ──────────────────────────────────
 	if pgWriter != nil {
 		if err := pgWriter.Save(cleanListings); err != nil {
 			log.Errorf("PostgreSQL write failed: %v", err)
@@ -91,11 +87,11 @@ func main() {
 		}
 	}
 
-	// ── Step 4: Generate insights from CLEAN data ─────────────────────────────
+	// ── Step 5: Generate insights from CLEAN data ──────────────────────────────
 	insightSvc := services.NewInsightService()
 	report := insightSvc.Generate(cleanListings)
 
-	// ── Step 5: Print terminal report ─────────────────────────────────────────
+	// ── Step 6: Print terminal report ─────────────────────────────────────────
 	reporter := services.NewReporter()
 	reporter.Print(report)
 
