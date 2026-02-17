@@ -2,40 +2,42 @@ package models
 
 import "time"
 
-// Platform represents which platform the listing was scraped from.
+// Platform identifies which platform the listing came from.
 type Platform string
 
 const (
 	PlatformAirbnb Platform = "airbnb"
 )
 
-// RawListing is the unprocessed data directly from the scraper.
-// Fields may contain raw strings that need normalization.
+// RawListing is the unprocessed data directly from chromedp.
+// All fields are raw strings exactly as scraped — no normalization applied.
 type RawListing struct {
 	Title       string
-	RawPrice    string // e.g. "$120 per night"
+	RawPrice    string // e.g. "RM 450 per night"
 	Location    string
-	Rating      string // e.g. "4.85"
+	Rating      string // e.g. "4.85" or "New" if no rating yet
 	URL         string
-	Description string
+	Description string // from detail page
+	Amenities   string // from detail page, comma-separated
 	Platform    Platform
 	ScrapedAt   time.Time
 }
 
-// Listing is the clean, normalized DTO used throughout the system.
+// Listing is the clean, normalized record stored in PostgreSQL.
 type Listing struct {
 	ID          int64
 	Platform    Platform
 	Title       string
-	Price       float64 // normalized numeric price per night
+	Price       float64  // normalized numeric nightly price
 	Location    string
-	Rating      float64 // 0 if not available
+	Rating      float64  // 0 if not available
 	URL         string
 	Description string
+	Amenities   string
 	ScrapedAt   time.Time
 }
 
-// InsightReport is the aggregated analytics output printed to terminal.
+// InsightReport holds all computed analytics derived from clean listings.
 type InsightReport struct {
 	TotalListings      int
 	AirbnbListings     int

@@ -9,12 +9,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Config holds all application-level configuration loaded from environment variables.
+// Config holds all application-level configuration.
 type Config struct {
-	DB        DatabaseConfig
-	Scraper   ScraperConfig
-	Airbnb    AirbnbConfig
-	OutputCSV string
+	DB      DatabaseConfig
+	Scraper ScraperConfig
+	Airbnb  AirbnbConfig
+	Output  OutputConfig
 }
 
 // DatabaseConfig contains PostgreSQL connection parameters.
@@ -26,7 +26,7 @@ type DatabaseConfig struct {
 	Name     string
 }
 
-// DSN returns a PostgreSQL data source name string.
+// DSN returns a PostgreSQL connection string.
 func (d DatabaseConfig) DSN() string {
 	return fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
@@ -34,25 +34,30 @@ func (d DatabaseConfig) DSN() string {
 	)
 }
 
-// ScraperConfig contains all scraper tuning parameters.
+// ScraperConfig holds all chromedp and rate-limiting parameters.
 type ScraperConfig struct {
-	MaxDepth          int
-	Parallelism       int
-	RateLimit         time.Duration
-	RandomDelay       time.Duration
-	MaxRetries        int
-	RequestTimeoutSec int
+	ListingsPerPage    int
+	PagesToScrape      int
+	PageLoadTimeout    time.Duration
+	ActionTimeout      time.Duration
+	RateLimit          time.Duration
+	RandomDelay        time.Duration
+	MaxRetries         int
+	Headless           bool
 }
 
-// AirbnbConfig contains Airbnb-specific URLs.
+// AirbnbConfig holds Airbnb target configuration.
 type AirbnbConfig struct {
-	BaseURL   string
-	SearchURL string
+	SearchLocation string
+}
+
+// OutputConfig holds output paths.
+type OutputConfig struct {
+	CSVPath string
 }
 
 // Load reads .env and returns a populated Config.
 func Load() (*Config, error) {
-	// Best-effort load: if .env is missing in production, rely on real env vars
 	_ = godotenv.Load()
 
 	cfg := &Config{
@@ -64,18 +69,21 @@ func Load() (*Config, error) {
 			Name:     getEnv("DB_NAME", "airbnb_scraper"),
 		},
 		Scraper: ScraperConfig{
-			MaxDepth:          getEnvInt("MAX_DEPTH", 3),
-			Parallelism:       getEnvInt("PARALLELISM", 2),
-			RateLimit:         time.Duration(getEnvInt("RATE_LIMIT_MS", 3000)) * time.Millisecond,
-			RandomDelay:       time.Duration(getEnvInt("RANDOM_DELAY_MS", 2000)) * time.Millisecond,
-			MaxRetries:        getEnvInt("MAX_RETRIES", 3),
-			RequestTimeoutSec: getEnvInt("REQUEST_TIMEOUT_SEC", 30),
+			ListingsPerPage: getEnvInt("LISTINGS_PER_PAGE", 5),
+			PagesToScrape:   getEnvInt("PAGES_TO_SCRAPE", 2),
+			PageLoadTimeout: time.Duration(getEnvInt("PAGE_LOAD_TIMEOUT_SEC", 60)) * time.Second,
+			ActionTimeout:   time.Duration(getEnvInt("ACTION_TIMEOUT_SEC", 30)) * time.Second,
+			RateLimit:       time.Duration(getEnvInt("RATE_LIMIT_MS", 4000)) * time.Millisecond,
+			RandomDelay:     time.Duration(getEnvInt("RANDOM_DELAY_MS", 3000)) * time.Millisecond,
+			MaxRetries:      getEnvInt("MAX_RETRIES", 3),
+			Headless:        getEnvBool("HEADLESS", true),
 		},
 		Airbnb: AirbnbConfig{
-			BaseURL:   getEnv("AIRBNB_BASE_URL", "https://www.airbnb.com"),
-			SearchURL: getEnv("AIRBNB_SEARCH_URL", "https://www.airbnb.com/s/Miami--FL--United-States/homes"),
+			SearchLocation: getEnv("AIRBNB_SEARCH_LOCATION", "Kuala Lumpur"),
 		},
-		OutputCSV: getEnv("OUTPUT_CSV", "./output/listings.csv"),
+		Output: OutputConfig{
+			CSVPath: getEnv("OUTPUT_CSV", "./output/raw_listings.csv"),
+		},
 	}
 
 	return cfg, nil
@@ -92,6 +100,16 @@ func getEnvInt(key string, fallback int) int {
 	if val := os.Getenv(key); val != "" {
 		if n, err := strconv.Atoi(val); err == nil {
 			return n
+		}
+	}
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	if val := os.Getenv(key); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err == nil {
+			return b
 		}
 	}
 	return fallback
