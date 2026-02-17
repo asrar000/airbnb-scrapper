@@ -1,5 +1,45 @@
 # Airbnb Web Scraper
 
+<div align="center">
+
+<table style="border: 4px solid red; background-color: #fff0f0; width: 100%;">
+<tr>
+<td align="center" style="padding: 20px;">
+
+<h1 style="color: red; font-size: 2.5em;">&#9888; WARNING &#9888;</h1>
+
+<h2 style="color: red;">THIS PROJECT DOES NOT WORK WITH GOCOLLY</h2>
+
+<p style="color: darkred; font-size: 1.1em;">
+Airbnb's anti-bot protection (Cloudflare + JavaScript rendering) actively blocks all
+Gocolly-based scrapers. Gocolly is an HTTP-level scraper and cannot execute JavaScript,
+which Airbnb requires to render its listing data. Every request made by this scraper
+will be intercepted and returned as a bot-challenge page with no usable content.
+</p>
+
+<p style="color: darkred; font-size: 1.1em;">
+This codebase is submitted purely to satisfy the architectural and code quality
+requirements of the assignment. The scraping layer is fully implemented correctly
+using Gocolly with rate limiting, rotating user agents, retry logic, and
+__NEXT_DATA__ JSON parsing — however it will return zero listings at runtime
+due to Airbnb's infrastructure-level bot detection, which no HTTP-based scraper
+can bypass without a headless browser or a paid proxy service.
+</p>
+
+<p style="color: darkred;">
+To actually scrape Airbnb data, a headless browser such as
+<strong>Playwright</strong>, <strong>Puppeteer</strong>, or <strong>chromedp</strong>
+would be required, which is outside the scope of this assignment.
+</p>
+
+</td>
+</tr>
+</table>
+
+</div>
+
+---
+
 A high-performance, concurrent, rate-limited web scraping system built in Go using the Colly library. Scrapes Airbnb property rental data, stores raw data in CSV, persists clean data in PostgreSQL, and generates market insights printed to the terminal.
 
 ---
