@@ -1,4 +1,4 @@
-module airbnb-scraper
+module airbnb-scrapper
 
 go 1.21
 

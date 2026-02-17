@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"airbnb-scraper/config"
-	"airbnb-scraper/models"
-	"airbnb-scraper/utils"
+	"airbnb-scrapper/config"
+	"airbnb-scrapper/models"
+	"airbnb-scrapper/utils"
 
 	_ "github.com/lib/pq"
 )

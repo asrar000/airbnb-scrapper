@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"airbnb-scraper/config"
-	"airbnb-scraper/scraper/airbnb"
-	"airbnb-scraper/services"
-	"airbnb-scraper/storage"
-	"airbnb-scraper/utils"
+	"airbnb-scrapper/config"
+	"airbnb-scrapper/scraper/airbnb"
+	"airbnb-scrapper/services"
+	"airbnb-scrapper/storage"
+	"airbnb-scrapper/utils"
 )
 
 func main() {

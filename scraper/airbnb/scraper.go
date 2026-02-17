@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"airbnb-scraper/config"
-	"airbnb-scraper/models"
-	"airbnb-scraper/utils"
+	"airbnb-scrapper/config"
+	"airbnb-scrapper/models"
+	"airbnb-scrapper/utils"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/gocolly/colly/v2/extensions"

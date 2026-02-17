@@ -1,6 +1,6 @@
 package storage
 
-import "airbnb-scraper/models"
+import "airbnb-scrapper/models"
 
 // RawWriter defines the contract for storing unprocessed scraped data.
 // Used by the CSV backend to persist raw listings before cleaning.

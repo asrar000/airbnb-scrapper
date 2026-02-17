@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"airbnb-scraper/models"
+	"airbnb-scrapper/models"
 )
 
 const (

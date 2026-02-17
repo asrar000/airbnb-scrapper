@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"airbnb-scraper/models"
-	"airbnb-scraper/utils"
+	"airbnb-scrapper/models"
+	"airbnb-scrapper/utils"
 )
 
 // CSVWriter implements RawWriter for CSV file output.

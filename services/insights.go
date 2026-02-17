@@ -4,8 +4,8 @@ import (
 	"math"
 	"sort"
 
-	"airbnb-scraper/models"
-	"airbnb-scraper/utils"
+	"airbnb-scrapper/models"
+	"airbnb-scrapper/utils"
 )
 
 // InsightService computes analytics from a clean dataset of listings.

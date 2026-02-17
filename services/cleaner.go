@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"airbnb-scraper/models"
-	"airbnb-scraper/scraper/airbnb"
-	"airbnb-scraper/utils"
+	"airbnb-scrapper/models"
+	"airbnb-scrapper/scraper/airbnb"
+	"airbnb-scrapper/utils"
 )
 
 // Cleaner transforms raw scraped listings into normalized, deduplicated Listing records.
